@@ -1,9 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"log"
+	"strconv"
 	"time"
+	"GriBotHabitLev/internal"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -19,16 +20,16 @@ type Habit struct {
 // Карта для хранения привычек по идентификатору пользователя
 var habits = make(map[int64][]Habit)
 
-// Создайте экземпляр бота и начните обработку команд
 func main() {
-	bot, err := tgbotapi.NewBotAPI("7626498763:AAGD1LsskYHu8_qgyHi48hsH1lVMjz_xP5k")
+	botToken := internal.BotToken // Получаем токен из config.go
+	bot, err := tgbotapi.NewBotAPI(botToken)
 	if err != nil {
+		internal.LogError(err)
 		log.Panic(err)
 	}
 
-	// Выводим информацию о боте
 	bot.Debug = true
-	log.Printf("Authorized on account %s", bot.Self.UserName)
+	internal.LogInfo("Авторизация выполнена на аккаунте: " + bot.Self.UserName)
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
@@ -56,128 +57,62 @@ func main() {
 	}
 }
 
-// Команда для добавления привычки
+// handleAddHabit добавляет привычку для пользователя
 func handleAddHabit(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	habitName := message.CommandArguments()
 	if habitName == "" {
-		msg := tgbotapi.NewMessage(message.Chat.ID, "Введите название привычки после команды /add")
+		msg := tgbotapi.NewMessage(message.Chat.ID, "Пожалуйста, укажите название привычки.")
 		bot.Send(msg)
 		return
 	}
-
-	newHabit := Habit{Name: habitName}
-	habits[message.Chat.ID] = append(habits[message.Chat.ID], newHabit)
-
-	msg := tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("Привычка '%s' добавлена!", habitName))
+	habits[message.Chat.ID] = append(habits[message.Chat.ID], Habit{Name: habitName})
+	msg := tgbotapi.NewMessage(message.Chat.ID, "Привычка \""+habitName+"\" добавлена.")
 	bot.Send(msg)
 }
 
-// Команда для отметки выполнения привычки
+// handleCompleteHabit отмечает привычку как выполненную
 func handleCompleteHabit(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	habitName := message.CommandArguments()
-	if habitName == "" {
-		msg := tgbotapi.NewMessage(message.Chat.ID, "Введите название привычки после команды /complete")
-		bot.Send(msg)
-		return
-	}
-
-	// Поиск привычки по названию
-	found := false
 	for i, habit := range habits[message.Chat.ID] {
 		if habit.Name == habitName {
-			found = true
-			// Проверка, выполнена ли привычка сегодня
-			if time.Now().Sub(habit.LastCompleted).Hours() < 24 {
-				msg := tgbotapi.NewMessage(message.Chat.ID, "Эта привычка уже отмечена на сегодня.")
-				bot.Send(msg)
-				return
-			}
-
-			// Обновление данных привычки
 			habits[message.Chat.ID][i].Count++
 			habits[message.Chat.ID][i].LastCompleted = time.Now()
-
-			// Обновляем серию (стрик) привычки
-			if time.Now().Sub(habit.LastCompleted).Hours() < 48 {
-				habits[message.Chat.ID][i].Streak++
-			} else {
-				habits[message.Chat.ID][i].Streak = 1
-			}
-
-			msg := tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("Привычка '%s' отмечена! Счётчик: %d", habitName, habits[message.Chat.ID][i].Count))
-			bot.Send(msg)
-			break
-		}
-	}
-
-	if !found {
-		msg := tgbotapi.NewMessage(message.Chat.ID, "Привычка не найдена.")
-		bot.Send(msg)
-	}
-}
-
-// Команда для просмотра статистики
-func handleStats(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	habitName := message.CommandArguments()
-	if habitName == "" {
-		msg := tgbotapi.NewMessage(message.Chat.ID, "Введите название привычки после команды /stats")
-		bot.Send(msg)
-		return
-	}
-
-	// Поиск привычки по названию
-	found := false
-	for _, habit := range habits[message.Chat.ID] {
-		if habit.Name == habitName {
-			found = true
-			msg := tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("Привычка '%s'\nВсего выполнений: %d\nСерия: %d дней", habit.Name, habit.Count, habit.Streak))
-			bot.Send(msg)
-			break
-		}
-	}
-
-	if !found {
-		msg := tgbotapi.NewMessage(message.Chat.ID, "Привычка не найдена.")
-		bot.Send(msg)
-	}
-}
-
-// Команда для установки напоминания
-func handleReminder(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-	habitName := message.CommandArguments()
-	if habitName == "" {
-		msg := tgbotapi.NewMessage(message.Chat.ID, "Введите название привычки после команды /reminder")
-		bot.Send(msg)
-		return
-	}
-
-	// Поиск привычки и установка напоминания
-	for i, habit := range habits[message.Chat.ID] {
-		if habit.Name == habitName {
-			habits[message.Chat.ID][i].Reminder = !habits[message.Chat.ID][i].Reminder
-			status := "отключены"
-			if habits[message.Chat.ID][i].Reminder {
-				status = "включены"
-			}
-			msg := tgbotapi.NewMessage(message.Chat.ID, fmt.Sprintf("Напоминания для привычки '%s' %s.", habit.Name, status))
+			habits[message.Chat.ID][i].Streak++
+			msg := tgbotapi.NewMessage(message.Chat.ID, "Привычка \""+habitName+"\" выполнена!")
 			bot.Send(msg)
 			return
 		}
 	}
-
-	msg := tgbotapi.NewMessage(message.Chat.ID, "Привычка не найдена.")
+	msg := tgbotapi.NewMessage(message.Chat.ID, "Привычка \""+habitName+"\" не найдена.")
 	bot.Send(msg)
 }
 
-// Пример функции, которая могла бы отправлять напоминания (используется в будущем)
-func sendReminders(bot *tgbotapi.BotAPI) {
-	for chatID, userHabits := range habits {
-		for _, habit := range userHabits {
-			if habit.Reminder {
-				msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("Не забудьте выполнить привычку '%s' сегодня!", habit.Name))
-				bot.Send(msg)
+// handleStats выводит статистику по привычкам пользователя
+func handleStats(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	stats := "Ваши привычки:\n"
+	for _, habit := range habits[message.Chat.ID] {
+		stats += "- " + habit.Name + ": выполнено " + strconv.Itoa(habit.Count) + " раз, подряд " + strconv.Itoa(habit.Streak) + " дней\n"
+	}
+	msg := tgbotapi.NewMessage(message.Chat.ID, stats)
+	bot.Send(msg)
+}
+
+// handleReminder устанавливает напоминание для привычки
+func handleReminder(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	habitName := message.CommandArguments()
+	for i, habit := range habits[message.Chat.ID] {
+		if habit.Name == habitName {
+			habits[message.Chat.ID][i].Reminder = !habits[message.Chat.ID][i].Reminder
+			reminderStatus := "включено"
+			if !habits[message.Chat.ID][i].Reminder {
+				reminderStatus = "выключено"
 			}
+			msg := tgbotapi.NewMessage(message.Chat.ID, "Напоминание для привычки \""+habitName+"\" "+reminderStatus+".")
+			bot.Send(msg)
+			return
 		}
 	}
+	msg := tgbotapi.NewMessage(message.Chat.ID, "Привычка \""+habitName+"\" не найдена.")
+	bot.Send(msg)
 }
 
